@@ -56,6 +56,7 @@ def forwardPass(cube):
 def train(samples , optimalVals, optimalPolicies):
     pass
 
+# TODO: might need to change numpy arrays to TF variables
 def doADI(k, l, M):
     for _ in range(M):
         samples = generateSamples(k, l)
@@ -64,13 +65,13 @@ def doADI(k, l, M):
         for i, sample in enumerate(samples):
             children = getChildren(sample)
             values = np.empty(len(children))
-            policies = np.empty((len(children), len(moves)))
             for j, child in enumerate(children):
                 value, policy = forwardPass(child)
                 values[j] = value
-                policies[j] = policy
             optimalVals[i] = values.max()
-            optimalPolicies[i] = policies[values.argmax()]
+            oneHot = np.zeros(len(moves))
+            oneHot[values.argmax()] = 1
+            optimalPolicies[i] = oneHot
         train(samples, optimalVals, optimalPolicies)
 
 
