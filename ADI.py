@@ -50,10 +50,9 @@ def reward(cube):
 
 def forwardPass(cube):
     # TODO: run cube through neural net
-
     return 0, np.empty(12) # TODO: REMOVE THIS
 
-def train(samples , optimalVals, optimalPolicies):
+def train(samples, optimalVals, optimalPolicies):
     pass
 
 # TODO: might need to change numpy arrays to TF variables

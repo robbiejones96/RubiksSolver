@@ -111,6 +111,42 @@ def initState():
 def doMove(s, move):
   return s[moveDefs[move]]
 
+def generateCubeletMappings():
+  cubeletMappings = {}
+  cubeletMappings[0] = 0
+  cubeletMappings[16] = 0
+  cubeletMappings[21] = 0
+  cubeletMappings[1] = 1
+  cubeletMappings[5] = 1
+  cubeletMappings[20] = 1
+  cubeletMappings[2] = 2
+  cubeletMappings[8] = 2
+  cubeletMappings[17] = 2
+  cubeletMappings[3] = 3
+  cubeletMappings[9] = 3
+  cubeletMappings[4] = 3
+  cubeletMappings[18] = 4
+  cubeletMappings[14] = 4
+  cubeletMappings[23] = 4
+  cubeletMappings[15] = 5
+  cubeletMappings[7] = 5
+  cubeletMappings[22] = 5
+  cubeletMappings[19] = 6
+  cubeletMappings[10] = 6
+  cubeletMappings[12] = 6
+  cubeletMappings[6] = 7
+  cubeletMappings[11] = 7
+  cubeletMappings[13] = 7
+  return cubeletMappings
+
+cubeletMappings = generateCubeletMappings()
+
+def getState(cube):
+  state = np.zeros((8, 24)) # TODO: constants
+  for i in range(24):
+    state[cubeletMappings[i]][ord(cube[i]) - ord('a')] = 1
+  return state
+
 # apply a string sequence of moves to a state
 def doAlgStr(s, alg):
   moves = alg.split(" ")
@@ -119,8 +155,13 @@ def doAlgStr(s, alg):
       s = doMove(s, moveInds[m])
   return s
 
+def getNumerical(cube):
+  return (np.array(list(map(ord, cube))) - ord('a')) // 4
+
 # check if state is solved
-def isSolved(s):
+def isSolved(s, convert=False):
+  if convert:
+    s = getNumerical(s)
   for i in range(6):
     if not (s[4 * i:4 * i + 4] == s[4 * i]).all():
       return False
