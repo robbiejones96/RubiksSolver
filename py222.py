@@ -104,7 +104,8 @@ fact6 = np.array([720, 120, 24, 6, 2, 1, 1])
 
 # get FC-normalized solved state
 def initState():
-  return np.array([0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5])
+  return np.array(['a','b','c','d','e','f','g','h','i','j','k','l','m','n','o','p','q','r','s','t','u','v','w','x'])
+  #return np.array([0, 0, 0, 0, 1, 1, 1, 1, 2, 2, 2, 2, 3, 3, 3, 3, 4, 4, 4, 4, 5, 5, 5, 5])
 
 # apply a move to a state
 def doMove(s, move):
@@ -168,6 +169,10 @@ def indexP2(sOP):
 def indexOP(sOP):
   return indexO(sOP) * 5040 + indexP2(sOP)
 
+def cubeToState(s):
+  state = np.zeros((8,24))
+
+
 # print state of the cube
 def printCube(s):
   print("      ┌──┬──┐")
@@ -187,6 +192,9 @@ def printCube(s):
 if __name__ == "__main__":
   # get solved state
   s = initState()
+  printCube(s)
+
+  s = doAlgStr(s, "U")
   printCube(s)
   # do some moves
   s = doAlgStr(s, "x y R U' R' U' F2 U' R U R' U F2")
