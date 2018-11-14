@@ -4,26 +4,6 @@ import numpy as np
 
 moves = ['F', 'F\'', 'B', 'B\'', 'R', 'R\'', 'L', 'L\'', 'D', 'D\'', 'U', 'U\'']
 
-
-def generateSolvedCubes():
-    solvedCubes = [None] * 7
-    solvedCubes[0] = py222.initState()
-    solvedCubes[1] = py222.doAlgStr(solvedCubes[0], 'y')
-    solvedCubes[2] = py222.doAlgStr(solvedCubes[1], 'y')
-    solvedCubes[3] = py222.doAlgStr(solvedCubes[2], 'y')
-    solvedCubes[4] = py222.doAlgStr(solvedCubes[0], 'x')
-    solvedCubes[5] = py222.doAlgStr(solvedCubes[4], 'x')
-    solvedCubes[6] = py222.doAlgStr(solvedCubes[5], 'x')
-    return solvedCubes
-
-solvedCubes = generateSolvedCubes()
-
-def isSolved(cube):
-    for solvedCube in solvedCubes:
-        if np.array_equal(cube, solvedCube):
-            return True
-    return False
-
 def getRandomMove():
     return moves[randint(0, len(moves) - 1)]
 
@@ -38,40 +18,36 @@ def generateSamples(k, l):
             samples[k * i + j] = scrambledCube
             currentCube = scrambledCube
     return samples
-        
-def getChildren(cube):
-    children = [None] * len(moves)
-    for i in range(len(moves)):
-        children[i] = py222.doAlgStr(cube, moves[i])
-    return children
 
 def reward(cube):
-    return 1 if isSolved(cube) else -1
+    return 1 if py222.isSolved(cube, True) else -1
 
 def forwardPass(cube):
     # TODO: run cube through neural net
     return 0, np.empty(12) # TODO: REMOVE THIS
 
-def train(samples, optimalVals, optimalPolicies):
+def train(states, optimalVals, optimalPolicies):
     pass
 
 # TODO: might need to change numpy arrays to TF variables
 def doADI(k, l, M):
     for _ in range(M):
         samples = generateSamples(k, l)
+        states = np.empty((len(samples), 8 * 24))
         optimalVals = np.empty(len(samples))
         optimalPolicies = np.empty((len(samples), len(moves)))
         for i, sample in enumerate(samples):
-            children = getChildren(sample)
-            values = np.empty(len(children))
-            for j, child in enumerate(children):
+            values = np.empty(len(moves))
+            for j, move in enumerate(moves):
+                child = py222.doAlgStr(sample, move)
                 value, policy = forwardPass(child)
-                values[j] = value
+                values[j] = value + reward(child)
             optimalVals[i] = values.max()
             oneHot = np.zeros(len(moves))
             oneHot[values.argmax()] = 1
             optimalPolicies[i] = oneHot
-        train(samples, optimalVals, optimalPolicies)
+            states[i] = py222.getState(sample).flatten()
+        train(states, optimalVals, optimalPolicies)
 
 
 
