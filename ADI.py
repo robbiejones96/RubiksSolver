@@ -2,10 +2,13 @@ import py222
 from random import randint
 import numpy as np
 import tensorflow as tf
+import os
+
+os.environ["TF_CPP_MIN_LOG_LEVEL"]="3"
 
 moves = ['F', 'F\'', 'B', 'B\'', 'R', 'R\'', 'L', 'L\'', 'D', 'D\'', 'U', 'U\'']
 
-kLearningRate = 0.75
+kLearningRate = 0.001
 
 def getRandomMove():
     return moves[randint(0, len(moves) - 1)]
@@ -23,7 +26,7 @@ def generateSamples(k, l):
     return samples
 
 def reward(cube):
-    return 1 if py222.isSolved(cube, True) else -1
+    return 1 if py222.isSolved(cube, True) else -2
 
 def forwardPass(cube, sess):
     state = py222.getState(cube).flatten()
@@ -67,8 +70,9 @@ def constructGraph():
 
 # TODO: might need to change numpy arrays to TF variables
 def doADI(k, l, M):
-    constructGraph()
+    global sess
     sess = tf.Session()
+    constructGraph()
     sess.run(tf.global_variables_initializer())
     for _ in range(M):
         samples = generateSamples(k, l)
@@ -80,14 +84,62 @@ def doADI(k, l, M):
             for j, move in enumerate(moves):
                 child = py222.doAlgStr(sample, move)
                 value, _ = forwardPass(child, sess)
+                #print value, _
+                #print reward(child)
                 values[j] = value + reward(child)
             optimalVals[i] = values.max()
             oneHot = np.zeros(len(moves))
             oneHot[values.argmax()] = 1
             optimalPolicies[i] = oneHot
             states[i] = py222.getState(sample).flatten()
-        train(states, optimalVals, optimalPolicies, sess)
+        #print states, optimalVals, optimalPolicies
+        # print states.shape, optimalVals.shape, optimalPolicies.shape
+        # print optimalVals.T.shape
+        print optimalVals
+        for i in range(10):
+            train(states, optimalVals, optimalPolicies, sess)
 
+def solveSingleCubeGreedy(cube, maxMoves, sess):
+    numMovesTaken = 0
+    while numMovesTaken <= maxMoves:
+        py222.printCube(py222.getNumerical(cube))
+        if py222.isSolved(cube, convert=True):
+            return True, numMovesTaken
+        _, policies = forwardPass(cube, sess)
+        with sess.as_default():
+            policiesArray = policies.eval()
+            bestMove = policiesArray.argmax()
+        print moves[bestMove]
+        cube = py222.doAlgStr(cube, moves[bestMove])
+        numMovesTaken += 1
+    return False, maxMoves
+        
+def createScrambledCube(numScrambles):
+    cube = py222.initState()
+    for i in range(numScrambles):
+        cube = py222.doAlgStr(cube, getRandomMove())
+    return cube
+
+def simulateCubeSolving(numCubes, maxSolveDistance):
+    data = np.zeros(maxSolveDistance+1)
+    for currentSolveDistance in range(maxSolveDistance+1):
+        numSolved = 0
+        for j in range(numCubes):
+            scrambledCube = createScrambledCube(currentSolveDistance)
+            result, numMoves = solveSingleCubeGreedy(scrambledCube, 1)#3 * currentSolveDistance + 1)
+            if result:
+                numSolved += 1
+        percentageSolved = float(numSolved)/numCubes
+        data[currentSolveDistance] = percentageSolved
+    print data
+
+
+if __name__ == "__main__":
+    doADI(k=2,l=2,M=10)
+    saver = tf.train.Saver()
+    save_path = saver.save(sess, "./model.cpkt")
+    print "Model saved in path: %s" % save_path
+    #simulateCubeSolving(numCubes=20, maxSolveDistance=1)
 
 
 

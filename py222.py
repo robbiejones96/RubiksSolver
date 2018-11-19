@@ -210,10 +210,6 @@ def indexP2(sOP):
 def indexOP(sOP):
   return indexO(sOP) * 5040 + indexP2(sOP)
 
-def cubeToState(s):
-  state = np.zeros((8,24))
-
-
 # print state of the cube
 def printCube(s):
   print("      ┌──┬──┐")
@@ -237,11 +233,14 @@ if __name__ == "__main__":
 
   s = doAlgStr(s, "U")
   printCube(s)
+
+  print(isSolved(s, True))
+  print(isSolved(initState(), True))
   # do some moves
-  s = doAlgStr(s, "x y R U' R' U' F2 U' R U R' U F2")
-  printCube(s)
-  # normalize stickers relative to DLB
-  s = normFC(s)
-  printCube(s)
+  # s = doAlgStr(s, "x y R U' R' U' F2 U' R U R' U F2")
+  # printCube(s)
+  # # normalize stickers relative to DLB
+  # s = normFC(s)
+  # printCube(s)
 
  
