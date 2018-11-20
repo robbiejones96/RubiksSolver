@@ -96,7 +96,7 @@ def doADI(k, l, M, nnGraph):
         #print states, optimalVals, optimalPolicies
         # print states.shape, optimalVals.shape, optimalPolicies.shape
         # print optimalVals.T.shape
-        print optimalVals
+        print(optimalVals)
         train(states, optimalVals, optimalPolicies, sess)
 
 def solveSingleCubeGreedy(cube, maxMoves):
