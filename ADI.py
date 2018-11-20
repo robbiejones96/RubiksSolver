@@ -110,6 +110,9 @@ def solveSingleCubeGreedy(cube, maxMoves):
         cube = py222.doAlgStr(cube, moves[bestMove])
         numMovesTaken += 1
     return False, maxMoves
+
+def solveSingleCubeMCTS(cube, maxMoves):
+    pass
         
 def createScrambledCube(numScrambles):
     cube = py222.initState()
@@ -124,12 +127,12 @@ def simulateCubeSolving(numCubes, maxSolveDistance):
         for j in range(numCubes):
             scrambledCube = createScrambledCube(currentSolveDistance)
             result, numMoves = solveSingleCubeGreedy(scrambledCube, 3 * currentSolveDistance + 1)
-            print numMoves, numMoves == 3*currentSolveDistance + 1
+            print(numMoves, numMoves == 3*currentSolveDistance + 1)
             if result:
                 numSolved += 1
         percentageSolved = float(numSolved)/numCubes
         data[currentSolveDistance] = percentageSolved
-    print data
+    print(data)
 
 
 if __name__ == "__main__":
@@ -144,14 +147,14 @@ if __name__ == "__main__":
                 doADI(k=5,l=20,M=10,nnGraph=nnGraph)
                 saver = tf.train.Saver()
                 save_path = saver.save(sess, kModelPath)
-                print "Model saved in path: %s" % save_path
+                print("Model saved in path: %s" % save_path)
             elif sys.argv[1].lower() == "-restoremodel":
                 saver = tf.train.Saver()
                 saver.restore(sess, kModelPath)
-                print "Model restored from " + kModelPath
+                print("Model restored from " + kModelPath)
                 simulateCubeSolving(numCubes=20, maxSolveDistance=3)
             else:
-                print "Invalid first argument: must be -newmodel or -restoremodel"
+                print("Invalid first argument: must be -newmodel or -restoremodel")
 
 
 
