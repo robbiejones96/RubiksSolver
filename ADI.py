@@ -3,12 +3,14 @@ from random import randint
 import numpy as np
 import tensorflow as tf
 import os
+import sys
 
 os.environ["TF_CPP_MIN_LOG_LEVEL"]="3"
 
 moves = ['F', 'F\'', 'B', 'B\'', 'R', 'R\'', 'L', 'L\'', 'D', 'D\'', 'U', 'U\'']
 
-kLearningRate = 0.001
+kLearningRate = 0.0005
+kModelPath = "./model.cpkt"
 
 def getRandomMove():
     return moves[randint(0, len(moves) - 1)]
@@ -38,9 +40,10 @@ def forwardPass(cube, sess):
 
 def train(states, optimalVals, optimalPols, sess):
     optimalVals = np.array([optimalVals]).T
-    sess.run(optimizer, feed_dict={X : states, optimalPolicies : optimalPols, optimalValues : optimalVals})
+    for i in range(10):
+        sess.run(optimizer, feed_dict={X : states, optimalPolicies : optimalPols, optimalValues : optimalVals})
 
-def constructGraph():
+def constructGraph(nnGraph):
     global X
     global optimalPolicies
     global optimalValues
@@ -54,25 +57,23 @@ def constructGraph():
     global valueLoss
     global optimizer
 
-    X = tf.placeholder(tf.float32, shape=[None, 8 * 24], name="Cube")
-    layer1 = tf.contrib.layers.fully_connected(X, 4096, tf.nn.elu, weights_initializer=tf.glorot_uniform_initializer)
-    layer2 = tf.contrib.layers.fully_connected(layer1, 2048, tf.nn.elu, weights_initializer=tf.glorot_uniform_initializer)
-    policyLayer1 = tf.contrib.layers.fully_connected(layer2, 512, tf.nn.elu, weights_initializer=tf.glorot_uniform_initializer)
-    valueLayer1 = tf.contrib.layers.fully_connected(layer2, 512, tf.nn.elu, weights_initializer=tf.glorot_uniform_initializer)
-    policyOutput = tf.contrib.layers.fully_connected(policyLayer1, 12, activation_fn=None, weights_initializer=tf.glorot_uniform_initializer)
-    valueOutput = tf.contrib.layers.fully_connected(valueLayer1, 1, activation_fn=None, weights_initializer=tf.glorot_uniform_initializer)
-    optimalPolicies = tf.placeholder(tf.float32, shape=[None, 12], name="optimalPolicies")
-    optimalValues = tf.placeholder(tf.float32, shape=[None, 1], name="OptimalValues")
-    policyLoss = tf.nn.softmax_cross_entropy_with_logits_v2(labels=optimalPolicies, logits=policyOutput)
-    valueLoss = tf.losses.mean_squared_error(optimalValues, valueOutput)
-    optimizer = tf.train.RMSPropOptimizer(learning_rate=kLearningRate).minimize(valueLoss + policyLoss)
+    with nnGraph.as_default():
+        X = tf.placeholder(tf.float32, shape=[None, 8 * 24], name="Cube")
+        layer1 = tf.contrib.layers.fully_connected(X, 4096, tf.nn.elu, weights_initializer=tf.glorot_uniform_initializer)
+        layer2 = tf.contrib.layers.fully_connected(layer1, 2048, tf.nn.elu, weights_initializer=tf.glorot_uniform_initializer)
+        policyLayer1 = tf.contrib.layers.fully_connected(layer2, 512, tf.nn.elu, weights_initializer=tf.glorot_uniform_initializer)
+        valueLayer1 = tf.contrib.layers.fully_connected(layer2, 512, tf.nn.elu, weights_initializer=tf.glorot_uniform_initializer)
+        policyOutput = tf.contrib.layers.fully_connected(policyLayer1, 12, activation_fn=None, weights_initializer=tf.glorot_uniform_initializer)
+        valueOutput = tf.contrib.layers.fully_connected(valueLayer1, 1, activation_fn=None, weights_initializer=tf.glorot_uniform_initializer)
+        optimalPolicies = tf.placeholder(tf.float32, shape=[None, 12], name="optimalPolicies")
+        optimalValues = tf.placeholder(tf.float32, shape=[None, 1], name="OptimalValues")
+        policyLoss = tf.nn.softmax_cross_entropy_with_logits_v2(labels=optimalPolicies, logits=policyOutput)
+        valueLoss = tf.losses.mean_squared_error(optimalValues, valueOutput)
+        optimizer = tf.train.RMSPropOptimizer(learning_rate=kLearningRate).minimize(valueLoss + policyLoss)
 
 
 # TODO: might need to change numpy arrays to TF variables
-def doADI(k, l, M):
-    global sess
-    sess = tf.Session()
-    constructGraph()
+def doADI(k, l, M, nnGraph):
     sess.run(tf.global_variables_initializer())
     for _ in range(M):
         samples = generateSamples(k, l)
@@ -96,20 +97,16 @@ def doADI(k, l, M):
         # print states.shape, optimalVals.shape, optimalPolicies.shape
         # print optimalVals.T.shape
         print optimalVals
-        for i in range(10):
-            train(states, optimalVals, optimalPolicies, sess)
+        train(states, optimalVals, optimalPolicies, sess)
 
-def solveSingleCubeGreedy(cube, maxMoves, sess):
+def solveSingleCubeGreedy(cube, maxMoves):
     numMovesTaken = 0
     while numMovesTaken <= maxMoves:
-        py222.printCube(py222.getNumerical(cube))
         if py222.isSolved(cube, convert=True):
             return True, numMovesTaken
         _, policies = forwardPass(cube, sess)
-        with sess.as_default():
-            policiesArray = policies.eval()
-            bestMove = policiesArray.argmax()
-        print moves[bestMove]
+        policiesArray = policies.eval()
+        bestMove = policiesArray.argmax()
         cube = py222.doAlgStr(cube, moves[bestMove])
         numMovesTaken += 1
     return False, maxMoves
@@ -126,7 +123,8 @@ def simulateCubeSolving(numCubes, maxSolveDistance):
         numSolved = 0
         for j in range(numCubes):
             scrambledCube = createScrambledCube(currentSolveDistance)
-            result, numMoves = solveSingleCubeGreedy(scrambledCube, 1)#3 * currentSolveDistance + 1)
+            result, numMoves = solveSingleCubeGreedy(scrambledCube, 3 * currentSolveDistance + 1)
+            print numMoves, numMoves == 3*currentSolveDistance + 1
             if result:
                 numSolved += 1
         percentageSolved = float(numSolved)/numCubes
@@ -135,11 +133,26 @@ def simulateCubeSolving(numCubes, maxSolveDistance):
 
 
 if __name__ == "__main__":
-    doADI(k=2,l=2,M=10)
-    saver = tf.train.Saver()
-    save_path = saver.save(sess, "./model.cpkt")
-    print "Model saved in path: %s" % save_path
-    #simulateCubeSolving(numCubes=20, maxSolveDistance=1)
+    tf.reset_default_graph()
+    nnGraph = tf.Graph()
+    constructGraph(nnGraph)
+    global sess
+    sess = tf.Session(graph=nnGraph)
+    with nnGraph.as_default():
+        with sess.as_default():
+            if sys.argv[1].lower() == "-newmodel":
+                doADI(k=5,l=20,M=10,nnGraph=nnGraph)
+                saver = tf.train.Saver()
+                save_path = saver.save(sess, kModelPath)
+                print "Model saved in path: %s" % save_path
+            elif sys.argv[1].lower() == "-restoremodel":
+                saver = tf.train.Saver()
+                saver.restore(sess, kModelPath)
+                print "Model restored from " + kModelPath
+                simulateCubeSolving(numCubes=20, maxSolveDistance=3)
+            else:
+                print "Invalid first argument: must be -newmodel or -restoremodel"
+
 
 
 
