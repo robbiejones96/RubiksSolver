@@ -4,28 +4,47 @@ import numpy as np
 import tensorflow as tf
 import os
 import sys
+from scipy.sparse import coo_matrix
 
 os.environ["TF_CPP_MIN_LOG_LEVEL"]="3"
 
 moves = ['F', 'F\'', 'B', 'B\'', 'R', 'R\'', 'L', 'L\'', 'D', 'D\'', 'U', 'U\'']
 
 kLearningRate = 0.0005
+kNumStickers = 24
+kNumCubes = 8
 kModelPath = "./model.cpkt"
 
 def getRandomMove():
     return moves[randint(0, len(moves) - 1)]
 
+def getFileEnding(i, M):
+    numTotalDigits = len(str(M))
+    numCurrDigits = len(str(i))
+    leadingZeros = '0' * (numTotalDigits - numCurrDigits)
+    return "{}{}".format(leadingZeros, i)
+
+
+def generateTrainingSet(k, l, M):
+    for i in range(M):
+        samples, states = generateSamples(k, l)
+        fileEnding = getFileEnding(i, M)
+        np.save("trueCubes{}".format(fileEnding), samples)
+        np.save("states{}".format(fileEnding), states)
+
 # TODO: Add the loss weight to each sample?
 def generateSamples(k, l):
     N = k * l
-    samples = [None] * N
+    samples = np.empty((N, kNumStickers), dtype=bytes)
+    states = np.empty((N, kNumCubes * kNumStickers))
     for i in range(l):
         currentCube = py222.initState()
         for j in range(k):
             scrambledCube = py222.doAlgStr(currentCube, getRandomMove())
             samples[k * i + j] = scrambledCube
+            states[k * i + j] = py222.getState(scrambledCube).flatten()
             currentCube = scrambledCube
-    return samples
+    return samples, coo_matrix(states)
 
 def reward(cube):
     return 1 if py222.isSolved(cube, True) else -2
@@ -76,7 +95,7 @@ def constructGraph(nnGraph):
 def doADI(k, l, M, nnGraph):
     sess.run(tf.global_variables_initializer())
     for _ in range(M):
-        samples = generateSamples(k, l)
+        samples, _ = generateSamples(k, l)
         states = np.empty((len(samples), 8 * 24))
         optimalVals = np.empty(len(samples))
         optimalPolicies = np.empty((len(samples), len(moves)))  
