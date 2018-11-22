@@ -24,6 +24,12 @@ kLambda = 1
 def getRandomMove():
     return moves[randint(0, len(moves) - 1)]
 
+def createScrambledCube(numScrambles):
+    cube = py222.initState()
+    for i in range(numScrambles):
+        cube = py222.doAlgStr(cube, getRandomMove())
+    return cube
+
 # TODO: Add the loss weight to each sample?
 def generateSamples(k, l):
     N = k * l
@@ -209,11 +215,6 @@ def solveSingleCubeFullMCTS(cube, maxMoves, maxDepth):
         numMovesTaken += 1
     return False, maxMoves+1
         
-def createScrambledCube(numScrambles):
-    cube = py222.initState()
-    for i in range(numScrambles):
-        cube = py222.doAlgStr(cube, getRandomMove())
-    return cube
 
 def simulateCubeSolvingGreedy(numCubes, maxSolveDistance):
     data = np.zeros(maxSolveDistance+1)
@@ -259,8 +260,8 @@ def simulateCubeSolvingFullMCTS(numCubes, maxSolveDistance):
 
 
 if __name__ == "__main__":
-    if len(sys.argv) <= 2:
-        print("Invalid number of arguments. Must specify model source (-newmodel or -restoremodel) and search strategy (-greedy, -vanillamcts, -fullmcts)")
+    if len(sys.argv) <= 3:
+        print("Invalid number of arguments. Must specify model source (-newmodel or -restoremodel) followed by model prefix (can enter 'default' for default prefix) and search strategy (-greedy, -vanillamcts, -fullmcts)")
     else:
         tf.reset_default_graph()
         nnGraph = tf.Graph()
@@ -269,25 +270,28 @@ if __name__ == "__main__":
         sess = tf.Session(graph=nnGraph)
         with nnGraph.as_default():
             with sess.as_default():
+                model_prefix = sys.argv[2]
+                if model_prefix == "default":
+                    model_prefix = kModelPath
                 if sys.argv[1].lower() == "-newmodel":
                     doADI(k=5,l=20,M=10,nnGraph=nnGraph)
                     saver = tf.train.Saver()
-                    save_path = saver.save(sess, kModelPath)
+                    save_path = saver.save(sess, model_prefix)
                     print("Model saved in path: %s" % save_path)
                 elif sys.argv[1].lower() == "-restoremodel":
                     saver = tf.train.Saver()
-                    saver.restore(sess, kModelPath)
-                    print("Model restored from " + kModelPath)
+                    saver.restore(sess, model_prefix)
+                    print("Model restored from " + model_prefix)
                 else:
                     print("Invalid first argument: must be -newmodel or -restoremodel")
 
                 #only simulate cubes upon restoring model for now. can be removed later
                 if sys.argv[1].lower() == "-restoremodel":
-                    if sys.argv[2].lower() == "-greedy":
+                    if sys.argv[3].lower() == "-greedy":
                         simulateCubeSolvingGreedy(numCubes=40, maxSolveDistance=4)
-                    if sys.argv[2].lower() == "-vanillamcts":
+                    if sys.argv[3].lower() == "-vanillamcts":
                         simulateCubeSolvingVanillaMCTS(numCubes=5, maxSolveDistance=4)
-                    if sys.argv[2].lower() == "-fullmcts":
+                    if sys.argv[3].lower() == "-fullmcts":
                         simulateCubeSolvingFullMCTS(numCubes=40, maxSolveDistance=4)
 
 
