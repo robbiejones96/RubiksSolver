@@ -24,20 +24,6 @@ kLambda = 1
 def getRandomMove():
     return moves[randint(0, len(moves) - 1)]
 
-def getFileEnding(i, M):
-    numTotalDigits = len(str(M))
-    numCurrDigits = len(str(i))
-    leadingZeros = '0' * (numTotalDigits - numCurrDigits)
-    return "{}{}".format(leadingZeros, i)
-
-
-def generateTrainingSet(k, l, M):
-    for i in range(M):
-        samples, states = generateSamples(k, l)
-        fileEnding = getFileEnding(i, M)
-        np.save("trueCubes{}".format(fileEnding), samples)
-        np.save("states{}".format(fileEnding), states)
-
 # TODO: Add the loss weight to each sample?
 def generateSamples(k, l):
     N = k * l
