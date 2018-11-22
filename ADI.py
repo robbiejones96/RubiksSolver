@@ -7,6 +7,7 @@ import sys
 from scipy.sparse import coo_matrix
 import collections
 import math
+import MCTS
 
 os.environ["TF_CPP_MIN_LOG_LEVEL"]="3"
 
@@ -20,15 +21,10 @@ kMCTSExploration = 4.0 #this is form alphago, can't dispute it
 kDiscountFactor = 1.0
 kMCTSSimulateIterations = 100
 kLambda = 1
+kVirtualLoss = 2
 
 def getRandomMove():
     return moves[randint(0, len(moves) - 1)]
-
-def createScrambledCube(numScrambles):
-    cube = py222.initState()
-    for i in range(numScrambles):
-        cube = py222.doAlgStr(cube, getRandomMove())
-    return cube
 
 # TODO: Add the loss weight to each sample?
 def generateSamples(k, l):
@@ -116,7 +112,7 @@ def doADI(k, l, M, nnGraph):
         print(optimalVals)
         train(states, optimalVals, optimalPolicies, sess)
 
-def solveSingleCubeGreedy(cube, maxMoves):
+def solveSingleCubeGreedy(cube, maxMoves, sess):
     numMovesTaken = 0
     while numMovesTaken <= maxMoves:
         if py222.isSolved(cube, convert=True):
@@ -128,12 +124,12 @@ def solveSingleCubeGreedy(cube, maxMoves):
         numMovesTaken += 1
     return False, maxMoves+1
 
-def solveSingleCubeVanillaMCTS(cube, maxMoves, maxDepth):
+def solveSingleCubeVanillaMCTS(cube, maxMoves, maxDepth, sess):
     numMovesTaken = 0
     while numMovesTaken <= maxMoves:
         if py222.isSolved(cube, convert=True):
             return True, numMovesTaken
-        bestMove = selectActionVanillaMCTS(cube, maxDepth)
+        bestMove = selectActionVanillaMCTS(cube, maxDepth, sess)
         if bestMove == -1:
             print("something went wrong when selecting best move")
             break
@@ -147,13 +143,13 @@ def selectActionVanillaMCTS(state, depth):
     counts = {}
     seenStates = set()
     for i in range(kMCTSSimulateIterations):
-        simulateVanillaMCTS(state, depth, q, counts, seenStates, stateStr)
+        simulateVanillaMCTS(state, depth, q, counts, seenStates, stateStr, sess)
     allVals = np.zeros(len(moves))
     for i in range(len(moves)):
         allVals[i] = q[stateStr][moves[i]]
     return allVals.argmax()
 
-def simulateVanillaMCTS(state, depth, q, counts, seenStates, stateStr):
+def simulateVanillaMCTS(state, depth, q, counts, seenStates, stateStr, sess):
     if depth == 0:
         return 0
     if stateStr not in seenStates:
@@ -163,7 +159,7 @@ def simulateVanillaMCTS(state, depth, q, counts, seenStates, stateStr):
             q[stateStr][move] = 0
             counts[stateStr][move] = 1
         seenStates.add(stateStr)
-        return rolloutVanillaMCTS(state, depth)
+        return rolloutVanillaMCTS(state, depth, sess)
     totalStateCounts = 0
     for move in moves:
         totalStateCounts += counts[stateStr][move]
@@ -179,7 +175,7 @@ def simulateVanillaMCTS(state, depth, q, counts, seenStates, stateStr):
     q[stateStr][bestMove] += (newQ - q[stateStr][bestMove])/counts[stateStr][bestMove] 
     return newQ
 
-def rolloutVanillaMCTS(state, depth):
+def rolloutVanillaMCTS(state, depth, sess):
     if depth == 0:
         return 0
     _, policies = forwardPass(state, sess)
@@ -203,26 +199,81 @@ def weighted_choice(weights):
     throw = np.random.rand()*norm
     return np.searchsorted(totals, throw)
 
-def solveSingleCubeFullMCTS(cube, maxMoves, maxDepth):
+def solveSingleCubeFullMCTS(cube, maxMoves, sess):
     numMovesTaken = 0
+    simulatedPath = []
+    simulatedActions = []
+    treeStates = set()
+    seenStates = set()
+    currentCube = cube
+    currentCubeStr = str(cube)
+    counts = {}
+    maxVals = {}
+    priorProbabilities = {}
+    virtualLosses = {}
+    _, probs = forwardPass(currentCube, sess)
+    probsArray = probs.eval()[0]
+    initStateVals(currentCubeStr, counts, maxVals, priorProbabilities, virtualLosses, probsArray)
+    seenStates.add(currentCubeStr)
+    simulatedPath.append(currentCube)
     while numMovesTaken <= maxMoves:
-        if py222.isSolved(cube, convert=True):
-            return True, numMovesTaken
-        value, policies = forwardPass(cube, sess)
+        if py222.isSolved(currentCube, convert=True):
+            return True, numMovesTaken, simulatedPath
+        if currentCubeStr not in treeStates:
+            for move in moves:
+                childState = py222.doAlgStr(currentCube, move)
+                childStateStr = str(childState)
+                if childStateStr not in seenStates:
+                    _, probs = forwardPass(childState, sess)
+                    probsArray = probs.eval()[0]
+                    initStateVals(childStateStr, counts, maxVals, priorProbabilities, virtualLosses, probsArray)
+                    seenStates.add(childStateStr)
+            value, _ = forwardPass(currentCube, sess)
+            for i, state in enumerate(simulatedPath):
+                if i < len(simulatedActions):
+                    stateStr = str(state)
+                    maxVals[stateStr][simulatedActions[i]] = max(maxVals[stateStr][simulatedActions[i]], value)
+                    counts[stateStr][simulatedActions[i]] += 1
+                    virtualLosses[stateStr][simulatedActions[i]] -= kVirtualLoss
+            treeStates.add(currentCubeStr)
+        else:
+            actionVals = np.zeros(len(moves))
+            totalStateCounts = 0
+            for move in moves:
+                totalStateCounts += counts[currentCubeStr][move]
+            for i in range(len(moves)):
+                currMove = moves[i]
+                q = maxVals[currentCubeStr][currMove] - virtualLosses[currentCubeStr][currMove]
+                u = kMCTSExploration * priorProbabilities[currentCubeStr][currMove] * math.sqrt(totalStateCounts)/(1+counts[currentCubeStr][currMove])
+                actionVals[i] = u + q
+            bestMoveIndex = actionVals.argmax()
+            bestMove = moves[bestMoveIndex]
+            virtualLosses[currentCubeStr][bestMove] += kVirtualLoss
+            simulatedActions.append(bestMove)
+            currentCube = py222.doAlgStr(currentCube, bestMove)
+            currentCubeStr = str(currentCube)
+            simulatedPath.append(currentCube)
+            numMovesTaken += 1
+    return False, maxMoves+1, simulatedPath
 
-        bestMove = selectActionMCTS(cube, maxDepth)
-        cube = py222.doAlgStr(cube, moves[bestMove])
-        numMovesTaken += 1
-    return False, maxMoves+1
-        
+def initStateVals(stateStr, counts, maxVals, priorProbabilities, virtualLosses, probs):
+    counts[stateStr] = {}
+    maxVals[stateStr] = {}
+    priorProbabilities[stateStr] = {}
+    virtualLosses[stateStr] = {}
+    for i, move in enumerate(moves):
+        counts[stateStr][move] = 0
+        maxVals[stateStr][move] = 0
+        virtualLosses[stateStr][move] = 0
+        priorProbabilities[stateStr][move] = probs[i]       
 
-def simulateCubeSolvingGreedy(numCubes, maxSolveDistance):
+def simulateCubeSolvingGreedy(numCubes, maxSolveDistance, sess):
     data = np.zeros(maxSolveDistance+1)
     for currentSolveDistance in range(maxSolveDistance+1):
         numSolved = 0
         for j in range(numCubes):
-            scrambledCube = createScrambledCube(currentSolveDistance)
-            result, numMoves = solveSingleCubeGreedy(scrambledCube, 3 * currentSolveDistance + 1)
+            scrambledCube = py222.createScrambledCube(currentSolveDistance)
+            result, numMoves = solveSingleCubeGreedy(scrambledCube, 3 * currentSolveDistance + 1, sess)
             print(numMoves, numMoves != 3*currentSolveDistance + 2)
             if result:
                 numSolved += 1
@@ -230,13 +281,13 @@ def simulateCubeSolvingGreedy(numCubes, maxSolveDistance):
         data[currentSolveDistance] = percentageSolved
     print(data)
 
-def simulateCubeSolvingVanillaMCTS(numCubes, maxSolveDistance):
+def simulateCubeSolvingVanillaMCTS(numCubes, maxSolveDistance, sess):
     data = np.zeros(maxSolveDistance+1)
     for currentSolveDistance in range(maxSolveDistance+1):
         numSolved = 0
         for j in range(numCubes):
-            scrambledCube = createScrambledCube(currentSolveDistance)
-            result, numMoves = solveSingleCubeVanillaMCTS(scrambledCube, 3 * currentSolveDistance + 1, 4)
+            scrambledCube = py222.createScrambledCube(currentSolveDistance)
+            result, numMoves = solveSingleCubeVanillaMCTS(scrambledCube, 3 * currentSolveDistance + 1, 4, sess)
             print(numMoves, numMoves != 3*currentSolveDistance + 2)
             if result:
                 numSolved += 1
@@ -244,14 +295,14 @@ def simulateCubeSolvingVanillaMCTS(numCubes, maxSolveDistance):
         data[currentSolveDistance] = percentageSolved
     print(data)
 
-def simulateCubeSolvingFullMCTS(numCubes, maxSolveDistance):
+def simulateCubeSolvingFullMCTS(numCubes, maxSolveDistance, sess):
     data = np.zeros(maxSolveDistance+1)
     for currentSolveDistance in range(maxSolveDistance+1):
         numSolved = 0
         for j in range(numCubes):
-            scrambledCube = createScrambledCube(currentSolveDistance)
-            result, numMoves = solveSingleCubeFullMCTS(scrambledCube, 3 * currentSolveDistance + 1)
-            print(numMoves, numMoves != 3*currentSolveDistance + 2)
+            scrambledCube = py222.createScrambledCube(currentSolveDistance)
+            result, numMoves, solvePath = solveSingleCubeFullMCTS(scrambledCube, 10 * currentSolveDistance + 1, sess)
+            print(numMoves, numMoves != 10*currentSolveDistance + 2)
             if result:
                 numSolved += 1
         percentageSolved = float(numSolved)/numCubes
@@ -288,11 +339,11 @@ if __name__ == "__main__":
                 #only simulate cubes upon restoring model for now. can be removed later
                 if sys.argv[1].lower() == "-restoremodel":
                     if sys.argv[3].lower() == "-greedy":
-                        simulateCubeSolvingGreedy(numCubes=40, maxSolveDistance=4)
+                        simulateCubeSolvingGreedy(numCubes=40, maxSolveDistance=4, sess=sess)
                     if sys.argv[3].lower() == "-vanillamcts":
-                        simulateCubeSolvingVanillaMCTS(numCubes=5, maxSolveDistance=4)
+                        simulateCubeSolvingVanillaMCTS(numCubes=5, maxSolveDistance=4, sess=sess)
                     if sys.argv[3].lower() == "-fullmcts":
-                        simulateCubeSolvingFullMCTS(numCubes=40, maxSolveDistance=4)
+                        simulateCubeSolvingFullMCTS(numCubes=5, maxSolveDistance=4, sess=sess)
 
 
 

@@ -2,6 +2,7 @@
 #coding: utf-8
 from __future__ import print_function
 import numpy as np
+from random import randint
 
 '''
 sticker indices:
@@ -101,6 +102,12 @@ hashOP = np.array([1, 2, 10])
 pow3 = np.array([1, 3, 9, 27, 81, 243, 729])
 pow7 = np.array([1, 7, 49, 343, 2401, 16807, 117649])
 fact6 = np.array([720, 120, 24, 6, 2, 1, 1])
+
+moves = ['F', 'F\'', 'B', 'B\'', 'R', 'R\'', 'L', 'L\'', 'D', 'D\'', 'U', 'U\'']
+
+def getRandomMove():
+    return moves[randint(0, len(moves) - 1)]
+
 
 # get FC-normalized solved state
 def initState():
@@ -210,9 +217,11 @@ def indexP2(sOP):
 def indexOP(sOP):
   return indexO(sOP) * 5040 + indexP2(sOP)
 
-def cubeToState(s):
-  state = np.zeros((8,24))
-
+def createScrambledCube(numScrambles):
+    cube = initState()
+    for i in range(numScrambles):
+        cube = doAlgStr(cube, getRandomMove())
+    return cube
 
 # print state of the cube
 def printCube(s):
