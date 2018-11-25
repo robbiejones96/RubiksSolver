@@ -5,3 +5,7 @@ __pycache__
 graphs
 model.cpkt.*
 checkpoint
+*.data*
+*.index
+*.meta
+*.h5
