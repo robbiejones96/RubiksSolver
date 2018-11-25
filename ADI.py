@@ -164,7 +164,7 @@ def weighted_choice(weights):
     throw = np.random.rand()*norm
     return np.searchsorted(totals, throw)
 
-def solveSingleCubeFullMCTS(model, cube, maxMoves, maxDepth):
+def solveSingleCubeFullMCTS(model, cube, maxMoves):
     numMovesTaken = 0
     simulatedPath = []
     simulatedActions = []
@@ -223,7 +223,7 @@ def solveSingleCubeFullMCTS(model, cube, maxMoves, maxDepth):
             currentCubeStr = str(currentCube)
             simulatedPath.append(currentCube)
             numMovesTaken += 1
-    return False, maxMoves+1
+    return False, maxMoves+1, simulatedPath
         
 
 def simulateCubeSolvingGreedy(model, numCubes, maxSolveDistance):
@@ -256,7 +256,7 @@ def simulateCubeSolvingVanillaMCTS(model, numCubes, maxSolveDistance):
     for currentSolveDistance in range(maxSolveDistance+1):
         numSolved = 0
         for j in range(numCubes):
-            scrambledCube = createScrambledCube(currentSolveDistance)
+            scrambledCube = py222.createScrambledCube(currentSolveDistance)
             result, numMoves = solveSingleCubeVanillaMCTS(model, scrambledCube, 3 * currentSolveDistance + 1, 4)
             print(numMoves, numMoves != 3*currentSolveDistance + 2)
             if result:
@@ -270,9 +270,9 @@ def simulateCubeSolvingFullMCTS(model, numCubes, maxSolveDistance):
     for currentSolveDistance in range(maxSolveDistance+1):
         numSolved = 0
         for j in range(numCubes):
-            scrambledCube = createScrambledCube(currentSolveDistance)
-            result, numMoves = solveSingleCubeFullMCTS(model, scrambledCube, 3 * currentSolveDistance + 1)
-            print(numMoves, numMoves != 3*currentSolveDistance + 2)
+            scrambledCube = py222.createScrambledCube(currentSolveDistance)
+            result, numMoves, solvePath = solveSingleCubeFullMCTS(model, scrambledCube, 10 * currentSolveDistance + 1)
+            print(numMoves, numMoves != 10*currentSolveDistance + 2)
             if result:
                 numSolved += 1
         percentageSolved = float(numSolved)/numCubes
