@@ -20,8 +20,8 @@ kModelPath = "./model.cpkt"
 kMCTSExploration = 4.0 #this is form alphago, can't dispute it
 kDiscountFactor = 1.0
 kMCTSSimulateIterations = 100
-kLambda = 1
-kVirtualLoss = 2
+kLambda = 1.0
+kVirtualLoss = 3.0
 
 def getRandomMove():
     return moves[randint(0, len(moves) - 1)]
@@ -301,8 +301,8 @@ def simulateCubeSolvingFullMCTS(numCubes, maxSolveDistance, sess):
         numSolved = 0
         for j in range(numCubes):
             scrambledCube = py222.createScrambledCube(currentSolveDistance)
-            result, numMoves, solvePath = solveSingleCubeFullMCTS(scrambledCube, 10 * currentSolveDistance + 1, sess)
-            print(numMoves, numMoves != 10*currentSolveDistance + 2)
+            result, numMoves, solvePath = solveSingleCubeFullMCTS(scrambledCube, 20 * currentSolveDistance + 10, sess)
+            print(numMoves, numMoves != 20*currentSolveDistance + 11)
             if result:
                 numSolved += 1
         percentageSolved = float(numSolved)/numCubes
