@@ -7,33 +7,36 @@ import sys
 from scipy.sparse import coo_matrix
 import collections
 import math
+import gc
+from CubeModel import buildModel, compileModel
+from tensorflow.train import RMSPropOptimizer
+from tensorflow.keras.models import load_model
+import constants
 
-def forwardPass(cube, sess):
-    state = py222.getState(cube).flatten()
-    inputState = np.array([state])
-    policy = sess.run(policyOutput, feed_dict={X: inputState})
-    policy = tf.nn.softmax(policy)
-    value = sess.run(valueOutput, feed_dict={X: inputState})
-    return value, policy
+moves = ['F', 'F\'', 'B', 'B\'', 'R', 'R\'', 'L', 'L\'', 'D', 'D\'', 'U', 'U\'']
 
-def solveSingleCubeGreedy(cube, maxMoves, sess):
+def reward(cube):
+    return 1 if py222.isSolved(cube, True) else -2
+
+def solveSingleCubeGreedy(model, cube, maxMoves):
     numMovesTaken = 0
     while numMovesTaken <= maxMoves:
         if py222.isSolved(cube, convert=True):
             return True, numMovesTaken
-        _, policies = forwardPass(cube, sess)
-        policiesArray = policies.eval()
+        state = np.array([py222.getState(cube).flatten()])
+        _, policies = model.predict(state)
+        policiesArray = policies[0]
         bestMove = policiesArray.argmax()
         cube = py222.doAlgStr(cube, moves[bestMove])
         numMovesTaken += 1
     return False, maxMoves+1
 
-def solveSingleCubeVanillaMCTS(cube, maxMoves, maxDepth, sess):
+def solveSingleCubeVanillaMCTS(model, cube, maxMoves, maxDepth):
     numMovesTaken = 0
     while numMovesTaken <= maxMoves:
         if py222.isSolved(cube, convert=True):
             return True, numMovesTaken
-        bestMove = selectActionVanillaMCTS(cube, maxDepth, sess)
+        bestMove = selectActionVanillaMCTS(model, cube, maxDepth)
         if bestMove == -1:
             print("something went wrong when selecting best move")
             break
@@ -41,59 +44,62 @@ def solveSingleCubeVanillaMCTS(cube, maxMoves, maxDepth, sess):
         numMovesTaken += 1
     return False, maxMoves+1
 
-def selectActionVanillaMCTS(state, depth):
+def selectActionVanillaMCTS(model, state, depth):
     stateStr = str(state)
     q = {}
     counts = {}
     seenStates = set()
-    for i in range(kMCTSSimulateIterations):
-        simulateVanillaMCTS(state, depth, q, counts, seenStates, stateStr, sess)
+    for i in range(constants.kMCTSSimulateIterations):
+        simulateVanillaMCTS(model, state, depth, q, counts, seenStates, stateStr)
     allVals = np.zeros(len(moves))
     for i in range(len(moves)):
         allVals[i] = q[stateStr][moves[i]]
     return allVals.argmax()
 
-def simulateVanillaMCTS(state, depth, q, counts, seenStates, stateStr, sess):
+def simulateVanillaMCTS(model, state, depth, q, counts, seenStates, stateStr):
     if depth == 0:
         return 0
     if stateStr not in seenStates:
         q[stateStr] = {}
         counts[stateStr] = {}
         for move in moves:
-            q[stateStr][move] = 0
+            nextState = py222.doAlgStr(state, move)
+            nextStateArray = np.array([py222.getState(nextState).flatten()])
+            value, _ = model.predict(nextStateArray)
+            q[stateStr][move] = value + reward(nextState)
             counts[stateStr][move] = 1
         seenStates.add(stateStr)
-        return rolloutVanillaMCTS(state, depth, sess)
+        return rolloutVanillaMCTS(model, state, depth)
     totalStateCounts = 0
     for move in moves:
         totalStateCounts += counts[stateStr][move]
     allQuantities = np.zeros(len(moves))
     for i in range(len(moves)):
-        allQuantities[i] = q[stateStr][moves[i]] + kMCTSExploration * math.sqrt(math.log(totalStateCounts)/counts[stateStr][moves[i]])
+        allQuantities[i] = q[stateStr][moves[i]] + constants.kMCTSExploration * math.sqrt(math.log(totalStateCounts)/counts[stateStr][moves[i]])
     bestActionIndex = allQuantities.argmax()
     bestMove = moves[bestActionIndex]
     nextState = py222.doAlgStr(state, bestMove)
     r = reward(nextState)
-    newQ = r + kDiscountFactor * simulateVanillaMCTS(nextState, depth - 1, q, counts, seenStates, str(nextState))
+    newQ = r + constants.kDiscountFactor * simulateVanillaMCTS(model, nextState, depth - 1, q, counts, seenStates, str(nextState))
     counts[stateStr][bestMove] += 1
     q[stateStr][bestMove] += (newQ - q[stateStr][bestMove])/counts[stateStr][bestMove] 
     return newQ
 
-def rolloutVanillaMCTS(state, depth, sess):
+def rolloutVanillaMCTS(model, cube, depth):
     if depth == 0:
         return 0
-    _, policies = forwardPass(state, sess)
-    policiesArray = policies.eval()
-    actionIndex = selectActionSoftmax(policiesArray)
-    nextState = py222.doAlgStr(state, moves[actionIndex])
+    state = np.array([py222.getState(cube).flatten()])
+    _, policies = model.predict(state)
+    actionIndex = selectActionSoftmax(policies)
+    nextState = py222.doAlgStr(cube, moves[actionIndex])
     r = reward(nextState)
-    return r + kDiscountFactor * rolloutVanillaMCTS(nextState, depth - 1)
+    return r + constants.kDiscountFactor * rolloutVanillaMCTS(model, nextState, depth - 1)
 
 def selectActionSoftmax(probabilities):
     probabilities = probabilities[0]
     weights = np.zeros(len(probabilities))
     for i in range(len(probabilities)):
-        weights[i] = math.exp(kLambda * probabilities[i])
+        weights[i] = math.exp(constants.kLambda * probabilities[i])
     return weighted_choice(weights)
 
 #this code stolen off stackoverflow (thank you kind stranger)
@@ -103,26 +109,75 @@ def weighted_choice(weights):
     throw = np.random.rand()*norm
     return np.searchsorted(totals, throw)
 
-def solveSingleCubeFullMCTS(cube, maxMoves, maxDepth, sess):
+def solveSingleCubeFullMCTS(model, cube, maxMoves):
     numMovesTaken = 0
+    simulatedPath = []
+    simulatedActions = []
+    treeStates = set()
+    seenStates = set()
+    currentCube = cube
+    currentCubeStr = str(cube)
+    counts = {}
+    maxVals = {}
+    priorProbabilities = {}
+    virtualLosses = {}
+    state = np.array([py222.getState(currentCube).flatten()])
+    _, probs = model.predict(state)
+    probsArray = probs[0]
+    initStateVals(currentCubeStr, counts, maxVals, priorProbabilities, virtualLosses, probsArray)
+    seenStates.add(currentCubeStr)
+    simulatedPath.append(currentCube)
     while numMovesTaken <= maxMoves:
-        if py222.isSolved(cube, convert=True):
-            return True, numMovesTaken
-        value, policies = forwardPass(cube, sess)
-
-        bestMove = selectActionMCTS(cube, maxDepth)
-        cube = py222.doAlgStr(cube, moves[bestMove])
-        numMovesTaken += 1
-    return False, maxMoves+1
+        if py222.isSolved(currentCube, convert=True):
+            return True, numMovesTaken, simulatedPath
+        if currentCubeStr not in treeStates:
+            for move in moves:
+                childState = py222.doAlgStr(currentCube, move)
+                childStateStr = str(childState)
+                if childStateStr not in seenStates:
+                    state = np.array([py222.getState(childState).flatten()])
+                    _, probs = model.predict(state)
+                    probsArray = probs[0]
+                    initStateVals(childStateStr, counts, maxVals, priorProbabilities, virtualLosses, probsArray)
+                    seenStates.add(childStateStr)
+            state = np.array([py222.getState(currentCube).flatten()])
+            value, _ = model.predict(state)
+            value = value[0][0]
+            for i, state in enumerate(simulatedPath):
+                if i < len(simulatedActions):
+                    stateStr = str(state)
+                    maxVals[stateStr][simulatedActions[i]] = max(maxVals[stateStr][simulatedActions[i]], value)
+                    counts[stateStr][simulatedActions[i]] += 1
+                    virtualLosses[stateStr][simulatedActions[i]] -= constants.kVirtualLoss
+            treeStates.add(currentCubeStr)
+        else:
+            actionVals = np.zeros(len(moves))
+            totalStateCounts = 0
+            for move in moves:
+                totalStateCounts += counts[currentCubeStr][move]
+            for i in range(len(moves)):
+                currMove = moves[i]
+                q = maxVals[currentCubeStr][currMove] - virtualLosses[currentCubeStr][currMove]
+                u = constants.kMCTSExploration * priorProbabilities[currentCubeStr][currMove] * math.sqrt(totalStateCounts)/(1+counts[currentCubeStr][currMove])
+                actionVals[i] = u + q
+            bestMoveIndex = actionVals.argmax()
+            bestMove = moves[bestMoveIndex]
+            virtualLosses[currentCubeStr][bestMove] += constants.kVirtualLoss
+            simulatedActions.append(bestMove)
+            currentCube = py222.doAlgStr(currentCube, bestMove)
+            currentCubeStr = str(currentCube)
+            simulatedPath.append(currentCube)
+            numMovesTaken += 1
+    return False, maxMoves+1, simulatedPath
         
 
-def simulateCubeSolvingGreedy(numCubes, maxSolveDistance, sess):
+def simulateCubeSolvingGreedy(model, numCubes, maxSolveDistance):
     data = np.zeros(maxSolveDistance+1)
     for currentSolveDistance in range(maxSolveDistance+1):
         numSolved = 0
         for j in range(numCubes):
             scrambledCube = py222.createScrambledCube(currentSolveDistance)
-            result, numMoves = solveSingleCubeGreedy(scrambledCube, 3 * currentSolveDistance + 1, sess)
+            result, numMoves = solveSingleCubeGreedy(model, scrambledCube, 3 * currentSolveDistance + 1)
             print(numMoves, numMoves != 3*currentSolveDistance + 2)
             if result:
                 numSolved += 1
@@ -130,13 +185,24 @@ def simulateCubeSolvingGreedy(numCubes, maxSolveDistance, sess):
         data[currentSolveDistance] = percentageSolved
     print(data)
 
-def simulateCubeSolvingVanillaMCTS(numCubes, maxSolveDistance, sess):
+def initStateVals(stateStr, counts, maxVals, priorProbabilities, virtualLosses, probs):
+    counts[stateStr] = {}
+    maxVals[stateStr] = {}
+    priorProbabilities[stateStr] = {}
+    virtualLosses[stateStr] = {}
+    for i, move in enumerate(moves):
+        counts[stateStr][move] = 0
+        maxVals[stateStr][move] = 0
+        virtualLosses[stateStr][move] = 0
+        priorProbabilities[stateStr][move] = probs[i]       
+
+def simulateCubeSolvingVanillaMCTS(model, numCubes, maxSolveDistance):
     data = np.zeros(maxSolveDistance+1)
     for currentSolveDistance in range(maxSolveDistance+1):
         numSolved = 0
         for j in range(numCubes):
             scrambledCube = py222.createScrambledCube(currentSolveDistance)
-            result, numMoves = solveSingleCubeVanillaMCTS(scrambledCube, 3 * currentSolveDistance + 1, 4, sess)
+            result, numMoves = solveSingleCubeVanillaMCTS(model, scrambledCube, 3 * currentSolveDistance + 1, 4)
             print(numMoves, numMoves != 3*currentSolveDistance + 2)
             if result:
                 numSolved += 1
@@ -144,14 +210,14 @@ def simulateCubeSolvingVanillaMCTS(numCubes, maxSolveDistance, sess):
         data[currentSolveDistance] = percentageSolved
     print(data)
 
-def simulateCubeSolvingFullMCTS(numCubes, maxSolveDistance, sess):
+def simulateCubeSolvingFullMCTS(model, numCubes, maxSolveDistance):
     data = np.zeros(maxSolveDistance+1)
     for currentSolveDistance in range(maxSolveDistance+1):
         numSolved = 0
         for j in range(numCubes):
             scrambledCube = py222.createScrambledCube(currentSolveDistance)
-            result, numMoves = solveSingleCubeFullMCTS(scrambledCube, 3 * currentSolveDistance + 1, sess)
-            print(numMoves, numMoves != 3*currentSolveDistance + 2)
+            result, numMoves, solvePath = solveSingleCubeFullMCTS(model, scrambledCube, 10 * currentSolveDistance + 1)
+            print(numMoves, numMoves != 10*currentSolveDistance + 2)
             if result:
                 numSolved += 1
         percentageSolved = float(numSolved)/numCubes

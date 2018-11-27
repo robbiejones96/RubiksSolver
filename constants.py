@@ -1,0 +1,12 @@
+kLearningRate = 0.0005
+kNumStickers = 24
+kNumCubes = 8
+kModelPath = "./model.cpkt"
+kMCTSExploration = 4.0 #this is form alphago, can't dispute it
+kDiscountFactor = 1.0
+kMCTSSimulateIterations = 100
+kLambda = 1.0
+kVirtualLoss = 3.0
+kNumMinEpochs = 100
+kNumMaxEpochs = 1000
+kEpsilon = 0.5
