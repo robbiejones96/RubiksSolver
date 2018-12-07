@@ -242,7 +242,7 @@ def printCube(s):
 if __name__ == "__main__":
   # get solved state
   s = initState()
-  printCube(s)
+  printCube(getNumerical(s))
 
   s = doAlgStr(s, "U")
   printCube(s)

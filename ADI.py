@@ -13,6 +13,7 @@ from tensorflow.train import RMSPropOptimizer
 from tensorflow.keras.models import load_model
 import MCTS
 import constants
+import time
 
 os.environ["TF_CPP_MIN_LOG_LEVEL"]="3"
 
@@ -36,16 +37,20 @@ def generateSamples(k, l):
     return samples, coo_matrix(states)
 
 def reward(cube):
-    return 1 if py222.isSolved(cube, True) else -2
+    return 1 if py222.isSolved(cube, True) else -1
 
 def doADI(k, l, M):
     model = buildModel(constants.kNumStickers * constants.kNumCubes)
     compileModel(model, constants.kLearningRate)
-    for _ in range(M):
+    for iterNum in range(M):
+        t0 = time.time()
         samples, _ = generateSamples(k, l)
+        t1 = time.time()
+        print(t1-t0)
         states = np.empty((len(samples), constants.kNumStickers * constants.kNumCubes))
         optimalVals = np.empty((len(samples), 1))
         optimalPolicies = np.empty(len(samples), dtype=np.int32)  
+        t0 = time.time()
         for i, sample in enumerate(samples):
             values = np.empty(len(moves))
             for j, move in enumerate(moves):
@@ -57,10 +62,16 @@ def doADI(k, l, M):
             optimalVals[i] = np.array([values.max()])
             optimalPolicies[i] = values.argmax()
             states[i] = py222.getState(sample).flatten()
+        t1 = time.time()
+        print(t1-t0)
+        t0 = time.time()
         model.fit(states, {"PolicyOutput" : optimalPolicies,
                            "ValueOutput" : optimalVals}, epochs=constants.kNumMaxEpochs,
                            verbose=False, steps_per_epoch=1)
+        t1 = time.time()
+        print(t1-t0)
         gc.collect()
+        print(iterNum)
     return model
 
 
@@ -72,7 +83,7 @@ if __name__ == "__main__":
         if model_prefix == "default":
             model_prefix = constants.kModelPath
         if sys.argv[1].lower() == "-newmodel":
-            model = doADI(k=2,l=2,M=2)
+            model = doADI(k=20,l=1,M=100)
             model.save("{}.h5".format(model_prefix))
             print("Model saved in path: {}.h5".format(model_prefix))
         elif sys.argv[1].lower() == "-restoremodel":
@@ -84,11 +95,11 @@ if __name__ == "__main__":
         #only simulate cubes upon restoring model for now. can be removed later
         if sys.argv[1].lower() == "-restoremodel":
             if sys.argv[3].lower() == "-greedy":
-                MCTS.simulateCubeSolvingGreedy(model, numCubes=40, maxSolveDistance=4)
+                MCTS.simulateCubeSolvingGreedy(model, numCubes=50, maxSolveDistance=7)
             if sys.argv[3].lower() == "-vanillamcts":
-                MCTS.simulateCubeSolvingVanillaMCTS(model, numCubes=5, maxSolveDistance=4)
+                MCTS.simulateCubeSolvingVanillaMCTS(model, numCubes=50, maxSolveDistance=7)
             if sys.argv[3].lower() == "-fullmcts":
-                MCTS.simulateCubeSolvingFullMCTS(model, numCubes=40, maxSolveDistance=4)
+                MCTS.simulateCubeSolvingFullMCTS(model, numCubes=50, maxSolveDistance=7)
 
 
 

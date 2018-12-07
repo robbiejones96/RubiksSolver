@@ -16,7 +16,7 @@ import constants
 moves = ['F', 'F\'', 'B', 'B\'', 'R', 'R\'', 'L', 'L\'', 'D', 'D\'', 'U', 'U\'']
 
 def reward(cube):
-    return 1 if py222.isSolved(cube, True) else -2
+    return 1 if py222.isSolved(cube, True) else -1
 
 def solveSingleCubeGreedy(model, cube, maxMoves):
     numMovesTaken = 0
@@ -33,10 +33,12 @@ def solveSingleCubeGreedy(model, cube, maxMoves):
 
 def solveSingleCubeVanillaMCTS(model, cube, maxMoves, maxDepth):
     numMovesTaken = 0
+    q = {}
+    counts = {}
     while numMovesTaken <= maxMoves:
         if py222.isSolved(cube, convert=True):
             return True, numMovesTaken
-        bestMove = selectActionVanillaMCTS(model, cube, maxDepth)
+        bestMove = selectActionVanillaMCTS(model, cube, maxDepth, q, counts)
         if bestMove == -1:
             print("something went wrong when selecting best move")
             break
@@ -44,10 +46,10 @@ def solveSingleCubeVanillaMCTS(model, cube, maxMoves, maxDepth):
         numMovesTaken += 1
     return False, maxMoves+1
 
-def selectActionVanillaMCTS(model, state, depth):
+def selectActionVanillaMCTS(model, state, depth, q, counts):
     stateStr = str(state)
-    q = {}
-    counts = {}
+    #q = {}
+    #counts = {}
     seenStates = set()
     for i in range(constants.kMCTSSimulateIterations):
         simulateVanillaMCTS(model, state, depth, q, counts, seenStates, stateStr)
@@ -169,21 +171,6 @@ def solveSingleCubeFullMCTS(model, cube, maxMoves):
             simulatedPath.append(currentCube)
             numMovesTaken += 1
     return False, maxMoves+1, simulatedPath
-        
-
-def simulateCubeSolvingGreedy(model, numCubes, maxSolveDistance):
-    data = np.zeros(maxSolveDistance+1)
-    for currentSolveDistance in range(maxSolveDistance+1):
-        numSolved = 0
-        for j in range(numCubes):
-            scrambledCube = py222.createScrambledCube(currentSolveDistance)
-            result, numMoves = solveSingleCubeGreedy(model, scrambledCube, 3 * currentSolveDistance + 1)
-            print(numMoves, numMoves != 3*currentSolveDistance + 2)
-            if result:
-                numSolved += 1
-        percentageSolved = float(numSolved)/numCubes
-        data[currentSolveDistance] = percentageSolved
-    print(data)
 
 def initStateVals(stateStr, counts, maxVals, priorProbabilities, virtualLosses, probs):
     counts[stateStr] = {}
@@ -196,19 +183,37 @@ def initStateVals(stateStr, counts, maxVals, priorProbabilities, virtualLosses, 
         virtualLosses[stateStr][move] = 0
         priorProbabilities[stateStr][move] = probs[i]       
 
-def simulateCubeSolvingVanillaMCTS(model, numCubes, maxSolveDistance):
+def simulateCubeSolvingGreedy(model, numCubes, maxSolveDistance):
     data = np.zeros(maxSolveDistance+1)
     for currentSolveDistance in range(maxSolveDistance+1):
         numSolved = 0
         for j in range(numCubes):
             scrambledCube = py222.createScrambledCube(currentSolveDistance)
-            result, numMoves = solveSingleCubeVanillaMCTS(model, scrambledCube, 3 * currentSolveDistance + 1, 4)
-            print(numMoves, numMoves != 3*currentSolveDistance + 2)
+            result, numMoves = solveSingleCubeGreedy(model, scrambledCube, 6 * currentSolveDistance + 1)
+            print(numMoves, numMoves != 6*currentSolveDistance + 2)
             if result:
                 numSolved += 1
         percentageSolved = float(numSolved)/numCubes
         data[currentSolveDistance] = percentageSolved
     print(data)
+
+def simulateCubeSolvingVanillaMCTS(model, numCubes, maxSolveDistance):
+    data = np.zeros(maxSolveDistance+1)
+    solveLengths = []
+    for currentSolveDistance in range(maxSolveDistance+1):
+        numSolved = 0
+        for j in range(numCubes):
+            scrambledCube = py222.createScrambledCube(currentSolveDistance)
+            result, numMoves = solveSingleCubeVanillaMCTS(model, scrambledCube, 6 * currentSolveDistance + 1, 1)
+            print(numMoves, numMoves != 6*currentSolveDistance + 2)
+            if result:
+                solveLengths.append(numMoves)
+                numSolved += 1
+        percentageSolved = float(numSolved)/numCubes
+        data[currentSolveDistance] = percentageSolved
+    print(data)
+    solveLengths.sort()
+    print(solveLengths[len(solveLengths)//2])
 
 def simulateCubeSolvingFullMCTS(model, numCubes, maxSolveDistance):
     data = np.zeros(maxSolveDistance+1)
@@ -216,8 +221,8 @@ def simulateCubeSolvingFullMCTS(model, numCubes, maxSolveDistance):
         numSolved = 0
         for j in range(numCubes):
             scrambledCube = py222.createScrambledCube(currentSolveDistance)
-            result, numMoves, solvePath = solveSingleCubeFullMCTS(model, scrambledCube, 10 * currentSolveDistance + 1)
-            print(numMoves, numMoves != 10*currentSolveDistance + 2)
+            result, numMoves, solvePath = solveSingleCubeFullMCTS(model, scrambledCube, 20 * currentSolveDistance + 1)
+            print(numMoves, numMoves != 20*currentSolveDistance + 2)
             if result:
                 numSolved += 1
         percentageSolved = float(numSolved)/numCubes
